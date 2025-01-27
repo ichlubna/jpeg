@@ -151,6 +151,9 @@ void free_buffers(struct context *context)
 
 		free(context->component[i].frame_buffer);
 	}
+
+    if(context->depth != NULL)
+        free(context->depth);
 }
 
 int compute_no_blocks_and_alloc_buffers(struct context *context)

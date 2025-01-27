@@ -153,6 +153,11 @@ struct context {
 	size_t mblocks;
 
 	uint8_t max_H, max_V;
+
+    uint8_t *depth;
+    size_t focusedDepth;
+    size_t depthWidth;
+    size_t depthHeight;
 };
 
 void init_huffenc(struct huffenc *huffenc);

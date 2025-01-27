@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <math.h> 
 #include "common.h"
 #include "frame.h"
 #include "coeffs.h"
@@ -86,6 +87,8 @@ struct params {
 	int cutoff;
 
 	int32_t T;
+
+    int depth;
 };
 
 void init_params(struct params *params)
@@ -106,6 +109,8 @@ void init_params(struct params *params)
 	params->cutoff = 0;
 
 	params->T = 0;
+
+    params->depth = 0;
 }
 
 int read_image(struct context *context, FILE *stream, struct params *params)
@@ -550,6 +555,31 @@ int roi_p(size_t block_x, size_t block_y, struct roi *roi, uint8_t h, uint8_t v)
 	return block_x >= coord_to_block(roi->x0, h) && block_x <= coord_to_block(roi->x1 - 1, h) && block_y >= coord_to_block(roi->y0, v) && block_y <= coord_to_block(roi->y1 - 1, v);
 }
 
+int getBlockDepth(struct context *context, size_t block_x, size_t block_y, size_t block_size)
+{
+    if(context->depth == NULL)
+        return 0;
+
+    const size_t totalLength = context->depthWidth * context->depthHeight;
+
+    size_t total = 0;
+    size_t average = 0;
+    for(size_t x = 0; x < block_size; x++)
+        for(size_t y = 0; y < block_size; y++)
+        {
+            size_t absoluteX = block_x * block_size + x;
+            size_t absoluteY = block_y * block_size + y;
+            size_t id = absoluteY * context->depthWidth + absoluteX;
+            if(id < totalLength)
+            {
+                average += context->depth[id];
+                total++;
+            }
+        }
+    average = round((float)average / total);    
+    return average;
+}
+
 int threshold_macroblock(struct context *context, struct scan *scan, struct roi *roi, int32_t threshold, int cutoff, int32_t T)
 {
 	assert(scan != NULL);
@@ -591,7 +621,14 @@ int threshold_macroblock(struct context *context, struct scan *scan, struct roi 
 
 				assert(int_block->c[0] >= -2047 && int_block->c[0] <= +2047);
 
-				if (!roi_p(block_x, block_y, roi, max_H / H, max_V / V)) {
+                int32_t base_threshold = T;
+                size_t blockDepth = getBlockDepth(context, block_x, block_y, 8);
+                int depth_mode = context->depth != NULL;
+                if (depth_mode)
+                    base_threshold = round(base_threshold * (abs((int)blockDepth - (int)context->focusedDepth)) / 255.0f);
+
+                int enable_roi = !roi_p(block_x, block_y, roi, max_H / H, max_V / V);
+				if (enable_roi || depth_mode) {
 					int32_t thr = 0;
 
 					if (j == 0) {
@@ -605,7 +642,7 @@ int threshold_macroblock(struct context *context, struct scan *scan, struct roi 
 
 					cutoff_block(int_block, cutoff);
 
-					threshold_dequantized_block(int_block, T, qtable);
+					threshold_dequantized_block(int_block, base_threshold, qtable);
 				}
 
 				// revert back
@@ -776,11 +813,60 @@ int produce_codestream(struct context *context, FILE *stream, struct params *par
 	return RET_SUCCESS;
 }
 
-int process_stream(FILE *i_stream, FILE *o_stream, struct params *params)
+int loadDepth(FILE *d_stream, struct context *context)
+{
+   if(d_stream == NULL)
+   {
+        context->depth = NULL;
+        return RET_SUCCESS;
+   }
+
+   char * line = NULL;
+   size_t length = 0;
+   ssize_t read;
+
+   getline(&line, &length, d_stream);
+   if(getline(&line, &length, d_stream) != -1)
+   {
+        char space = ' ';
+        char *found = strchr(line, space);
+        context->depthWidth = atoi(line);
+        context->depthHeight = atoi(found + 1);
+   }
+   else
+       return RET_FAILURE_FILE_IO; 
+
+   context->depth = malloc(sizeof(uint8_t) * context->depthWidth * context->depthHeight);
+
+   int i = 0;
+   while ((read = getline(&line, &length, d_stream)) != -1)
+   {
+     char *token = strtok(line, " ");
+     while( token != NULL )
+     {
+        i++;
+        context->depth[i] = atoi(token);
+        token = strtok(NULL, " ");
+     }
+
+   }
+   return RET_SUCCESS;
+}
+
+int getDepth(size_t x, size_t y,struct context *context)
+{
+    return context->depth[y * context->depthWidth + x]; 
+}
+
+int process_stream(FILE *i_stream, FILE *d_stream, FILE *o_stream, struct params *params)
 {
 	int err;
 
 	struct context *context = malloc(sizeof(struct context));
+    context->focusedDepth = params->depth;
+
+    err = loadDepth(d_stream, context);
+	RETURN_IF(err);
 
 	err = init_context(context);
 	RETURN_IF(err);
@@ -806,7 +892,7 @@ int main(int argc, char *argv[])
 
 	int opt;
 
-	while ((opt = getopt(argc, argv, "h:v:q:o:t:r:c:T:")) != -1) {
+	while ((opt = getopt(argc, argv, "h:v:q:o:t:r:c:T:d:")) != -1) {
 		switch (opt) {
 			char *ptr;
 			case 'h':
@@ -829,6 +915,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'T':
 				params.T = atoi(optarg);
+				break;
+			case 'd':
+				params.depth = atoi(optarg);
 				break;
 			case 'r':
 				ptr = strtok(optarg, ",");
@@ -857,21 +946,32 @@ int main(int argc, char *argv[])
 				break;
 			usage:
 			default:
-				fprintf(stderr, "Usage: %s [-h factor] [-v factor] [-q quality] [-o value] [-t threshold] [-T threshold] [-c cut-off-coefficient] [-r x0,y0,x1,y1] input.{ppm|pgm} output.jpg\n",
+				fprintf(stderr, "Usage: %s [-h factor] [-v factor] [-q quality] [-o value] [-t threshold] [-T threshold] [-d depth] [-c cut-off-coefficient] [-r x0,y0,x1,y1] input.{ppm|pgm} output.jpg depth.pgm (if depth is not defined, only ROI is used) \n",
 					argv[0]);
 				return 1;
 		}
 	}
 
-	const char *i_path = optind + 0 < argc ? argv[optind + 0] : "Lenna.ppm";
-	const char *o_path = optind + 1 < argc ? argv[optind + 1] : "output.jpg";
+	const char *i_path = optind + 0 < argc ? argv[optind + 0] : "";
+	const char *o_path = optind + 1 < argc ? argv[optind + 1] : "";
+	const char *d_path = optind + 2 < argc ? argv[optind + 2] : "";
+
+    if (i_path == NULL || o_path == NULL) {
+        fprintf(stderr, "No input/output file specified\n");
+        return 1;
+    }
 
 	FILE *i_stream = fopen(i_path, "r");
+	FILE *d_stream = fopen(d_path, "r");
 	FILE *o_stream = fopen(o_path, "w");
 
 	if (i_stream == NULL) {
 		fprintf(stderr, "fopen failure\n");
 		return 1;
+	}
+	
+    if (d_stream == NULL) {
+		fprintf(stderr, "Using only ROI, no valid depth input detected,\n");
 	}
 
 	if (o_stream == NULL) {
@@ -879,14 +979,16 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	int err = process_stream(i_stream, o_stream, &params);
+	int err = process_stream(i_stream, d_stream, o_stream, &params);
 
 	if (err) {
 		fprintf(stderr, "Failure.\n");
 	}
 
 	fclose(o_stream);
-	fclose(i_stream);
+    if (d_stream != NULL)
+        fclose(d_stream);
+    fclose(i_stream);
 
 	return 0;
 }
