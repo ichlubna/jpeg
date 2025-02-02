@@ -38,5 +38,5 @@ Depth-aware extension
 
 Example: 
 ./encoder -q 100 -o 1 -T 15 -d 32 -f 1.0 -n 50 input.ppm output.jpg depth.pgm 
-Encodes the image with 100 quality parameter and threshold 15 at the depth level of 32. The threshold is increasing with the larger distance of the depth read from the input depth map depth.pgm from the depth level value of 32. The factor 1.0 defines a linear increase of the threshold (2.0 would make the increase doubled). The 50 neighborhood creates tollerance around the depth 32 where the threshold stays the same without increasing.
+Encodes the image with 100 quality parameter and threshold 15 at the depth level of 32. The threshold is increasing with the larger distance of the depth read from the input depth map depth.pgm from the depth level value of 32. The factor 1.0 defines a linear increase of the threshold relative to the depth distance (2.0 would make the increase doubled). The 50 neighborhood creates tollerance around the depth 32 where the threshold stays the same without increasing.
 

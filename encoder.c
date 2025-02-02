@@ -631,7 +631,7 @@ int threshold_macroblock(struct context *context, struct scan *scan, struct roi 
                     int depthDistance = abs((int)blockDepth - (int)context->focusedDepth)-context->depthNeighborhood;
                     depthDistance = (int)fmax(depthDistance, 0);
                     float depthBasedFactor = context->depthFactor * (depthDistance / 255.0f);
-                    base_threshold = round(base_threshold + base_threshold * depthBasedFactor);
+                    base_threshold = round(base_threshold + depthBasedFactor);
                 }
 
                 int enable_roi = !roi_p(block_x, block_y, roi, max_H / H, max_V / V);
