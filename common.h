@@ -155,6 +155,8 @@ struct context {
 	uint8_t max_H, max_V;
 
     uint8_t *depth;
+    float depthFactor;
+    int depthNeighborhood;
     size_t focusedDepth;
     size_t depthWidth;
     size_t depthHeight;

@@ -89,6 +89,8 @@ struct params {
 	int32_t T;
 
     int depth;
+    float depthFactor;
+    int depthNeighborhood;
 };
 
 void init_params(struct params *params)
@@ -625,7 +627,12 @@ int threshold_macroblock(struct context *context, struct scan *scan, struct roi 
                 size_t blockDepth = getBlockDepth(context, block_x, block_y, 8);
                 int depth_mode = context->depth != NULL;
                 if (depth_mode)
-                    base_threshold = round(base_threshold * (abs((int)blockDepth - (int)context->focusedDepth)) / 255.0f);
+                {
+                    int depthDistance = abs((int)blockDepth - (int)context->focusedDepth)-context->depthNeighborhood;
+                    depthDistance = (int)fmax(depthDistance, 0);
+                    float depthBasedFactor = context->depthFactor * (depthDistance / 255.0f);
+                    base_threshold = round(base_threshold + base_threshold * depthBasedFactor);
+                }
 
                 int enable_roi = !roi_p(block_x, block_y, roi, max_H / H, max_V / V);
 				if (enable_roi || depth_mode) {
@@ -864,6 +871,8 @@ int process_stream(FILE *i_stream, FILE *d_stream, FILE *o_stream, struct params
 
 	struct context *context = malloc(sizeof(struct context));
     context->focusedDepth = params->depth;
+    context->depthFactor = params->depthFactor;
+    context->depthNeighborhood = params->depthNeighborhood;
 
     err = loadDepth(d_stream, context);
 	RETURN_IF(err);
@@ -892,7 +901,7 @@ int main(int argc, char *argv[])
 
 	int opt;
 
-	while ((opt = getopt(argc, argv, "h:v:q:o:t:r:c:T:d:")) != -1) {
+	while ((opt = getopt(argc, argv, "h:v:q:o:t:r:c:T:d:f:n:")) != -1) {
 		switch (opt) {
 			char *ptr;
 			case 'h':
@@ -918,6 +927,12 @@ int main(int argc, char *argv[])
 				break;
 			case 'd':
 				params.depth = atoi(optarg);
+				break;
+			case 'n':
+				params.depthNeighborhood = atoi(optarg);
+				break;
+			case 'f':
+				params.depthFactor = atof(optarg);
 				break;
 			case 'r':
 				ptr = strtok(optarg, ",");
@@ -946,7 +961,7 @@ int main(int argc, char *argv[])
 				break;
 			usage:
 			default:
-				fprintf(stderr, "Usage: %s [-h factor] [-v factor] [-q quality] [-o value] [-t threshold] [-T threshold] [-d depth] [-c cut-off-coefficient] [-r x0,y0,x1,y1] input.{ppm|pgm} output.jpg depth.pgm (if depth is not defined, only ROI is used) \n",
+				fprintf(stderr, "Usage: %s [-h factor] [-v factor] [-q quality] [-o value] [-t threshold] [-T threshold] [-d depth] [-n depth neighborhood] [-f depth factor] [-c cut-off-coefficient] [-r x0,y0,x1,y1] input.{ppm|pgm} output.jpg depth.pgm (if depth is not defined, only ROI is used) \n",
 					argv[0]);
 				return 1;
 		}
