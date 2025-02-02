@@ -828,7 +828,7 @@ int loadDepth(FILE *d_stream, struct context *context)
         return RET_SUCCESS;
    }
 
-   char * line = NULL;
+   char *line = NULL;
    size_t length = 0;
    ssize_t read;
 
@@ -846,16 +846,16 @@ int loadDepth(FILE *d_stream, struct context *context)
    context->depth = malloc(sizeof(uint8_t) * context->depthWidth * context->depthHeight);
 
    int i = 0;
+   getline(&line, &length, d_stream);
    while ((read = getline(&line, &length, d_stream)) != -1)
    {
      char *token = strtok(line, " ");
-     while( token != NULL )
+     while( token != NULL && token[0] != '\n')
      {
         i++;
         context->depth[i] = atoi(token);
         token = strtok(NULL, " ");
      }
-
    }
    return RET_SUCCESS;
 }
