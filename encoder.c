@@ -630,7 +630,7 @@ int threshold_macroblock(struct context *context, struct scan *scan, struct roi 
                 {
                     int depthDistance = abs((int)blockDepth - (int)context->focusedDepth)-context->depthNeighborhood;
                     depthDistance = (int)fmax(depthDistance, 0);
-                    float depthBasedFactor = context->depthFactor * (depthDistance / 255.0f);
+                    float depthBasedFactor = context->depthFactor * depthDistance;
                     base_threshold = round(base_threshold + depthBasedFactor);
                 }
 
